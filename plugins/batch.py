@@ -14,6 +14,7 @@ from plugins.settings import rename_file
 from plugins.start import subscribe as sub
 from utils.custom_filters import login_in_progress
 from utils.encrypt import dcs
+from plugins.caption_button import get_caption_buttons
 import json
 from typing import Dict, Any, Optional
 
@@ -84,51 +85,31 @@ async def upd_dlg(c):
 
 async def get_msg(c, u, i, d, lt):
     try:
-        if lt == 'public':
-            try:
-                xm = await c.get_messages(i, d)
-                emp[i] = getattr(xm, "empty", False)
-                if emp[i]:
-                    try:
-                        await u.join_chat(i)
-                    except:
-                        pass
-                    xm = await u.get_messages((await u.get_chat(f"@{i}")).id, d)
-                return xm
-            except Exception as e:
-                print(f'Error fetching public message: {e}')
-                return None
-        else:
-            if u:
-                try:
-                    async for _ in u.get_dialogs(limit=50):
-                        pass
-                    chat_id = i if str(i).startswith('-100') else f'-100{i}' if i.isdigit() else i
-                    try:
-                        peer = await u.resolve_peer(chat_id)
-                        if hasattr(peer, 'channel_id'):
-                            resolved_id = f'-100{peer.channel_id}'
-                        elif hasattr(peer, 'chat_id'):
-                            resolved_id = f'-{peer.chat_id}'
-                        elif hasattr(peer, 'user_id'):
-                            resolved_id = peer.user_id
-                        else:
-                            resolved_id = chat_id
-                        return await u.get_messages(resolved_id, d)
-                    except Exception:
-                        try:
-                            chat = await u.get_chat(chat_id)
-                            return await u.get_messages(chat.id, d)
-                        except Exception:
-                            async for _ in u.get_dialogs(limit=200):
-                                pass
-                            return await u.get_messages(chat_id, d)
-                except Exception as e:
-                    print(f'Private channel error: {e}')
-                    return None
+        if not u:
+            print("Source user client is not available")
             return None
+
+        # Public links: i is the username. d is the actual message id.
+        if lt == 'public':
+            chat = await u.get_chat(i)
+            msg = await u.get_messages(chat.id, int(d))
+            if not msg:
+                print(f"Message not found: @{i}/{d}")
+                return None
+            print(f"Fetched @{i}/{d}: media={bool(msg.media)} text={bool(msg.text)}")
+            return msg
+
+        # Private source.
+        chat_id = i if str(i).startswith('-100') else f'-100{i}' if str(i).isdigit() else i
+        chat = await u.get_chat(chat_id)
+        msg = await u.get_messages(chat.id, int(d))
+        if not msg:
+            print(f"Private message not found: {chat_id}/{d}")
+            return None
+        print(f"Fetched {chat_id}/{d}: media={bool(msg.media)} text={bool(msg.text)}")
+        return msg
     except Exception as e:
-        print(f'Error fetching message: {e}')
+        print(f"Error fetching source message {i}/{d}/{lt}: {type(e).__name__}: {e}")
         return None
 
 async def get_uclient(uid):
@@ -140,7 +121,7 @@ async def get_uclient(uid):
     if cl:
         return cl
     if not ud:
-        return X
+        return None
     xxx = ud.get('session_string')
     if xxx:
         try:
@@ -159,7 +140,7 @@ async def get_uclient(uid):
         except Exception as e:
             print(f'User client error: {e}')
             return Y
-    return X
+    return None
 
 async def prog(c, t, C, h, m, st):
     global P
@@ -183,20 +164,20 @@ async def prog(c, t, C, h, m, st):
 async def send_direct(c, m, tcid, ft=None, rtmid=None):
     try:
         if m.video:
-            await c.send_video(tcid, m.video.file_id, caption=ft, duration=m.video.duration, width=m.video.width, height=m.video.height, reply_to_message_id=rtmid)
+            await c.send_video(tcid, m.video.file_id, caption=ft, duration=m.video.duration, width=m.video.width, height=m.video.height, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.video_note:
-            await c.send_video_note(tcid, m.video_note.file_id, reply_to_message_id=rtmid)
+            await c.send_video_note(tcid, m.video_note.file_id, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.voice:
-            await c.send_voice(tcid, m.voice.file_id, reply_to_message_id=rtmid)
+            await c.send_voice(tcid, m.voice.file_id, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.sticker:
-            await c.send_sticker(tcid, m.sticker.file_id, reply_to_message_id=rtmid)
+            await c.send_sticker(tcid, m.sticker.file_id, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.audio:
-            await c.send_audio(tcid, m.audio.file_id, caption=ft, duration=m.audio.duration, performer=m.audio.performer, title=m.audio.title, reply_to_message_id=rtmid)
+            await c.send_audio(tcid, m.audio.file_id, caption=ft, duration=m.audio.duration, performer=m.audio.performer, title=m.audio.title, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.photo:
             photo_id = m.photo.file_id if hasattr(m.photo, 'file_id') else m.photo[-1].file_id
-            await c.send_photo(tcid, photo_id, caption=ft, reply_to_message_id=rtmid)
+            await c.send_photo(tcid, photo_id, caption=ft, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.document:
-            await c.send_document(tcid, m.document.file_id, caption=ft, file_name=m.document.file_name, reply_to_message_id=rtmid)
+            await c.send_document(tcid, m.document.file_id, caption=ft, file_name=m.document.file_name, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         else:
             return False
         return True
@@ -239,8 +220,11 @@ async def process_msg(c, u, m, d, lt, uid, i):
             f = await u.download_media(m, progress=prog, progress_args=(c, d, p.id, st))
 
             if not f:
-                await c.edit_message_text(d, p.id, 'Failed.')
-                return 'Failed.'
+                await c.edit_message_text(
+                    d, p.id,
+                    'Download failed: user session cannot download this media.'
+                )
+                return 'Failed: download_media returned None.'
 
             await c.edit_message_text(d, p.id, 'Renaming...')
             f = await rename_file(f, d, p)
@@ -277,6 +261,7 @@ async def process_msg(c, u, m, d, lt, uid, i):
                             width=w if mtype == 'video' else None,
                             caption=ft if m.caption and mtype not in ['video_note', 'voice'] else None,
                             reply_to_message_id=rtmid,
+                            reply_markup=get_caption_buttons(),
                             progress=prog,
                             progress_args=(c, d, p.id, st)
                         )
@@ -287,6 +272,7 @@ async def process_msg(c, u, m, d, lt, uid, i):
                         thumb=th,
                         caption=ft if m.caption else None,
                         reply_to_message_id=rtmid,
+                        reply_markup=get_caption_buttons(),
                         progress=prog,
                         progress_args=(c, d, p.id, st)
                     )
@@ -309,19 +295,19 @@ async def process_msg(c, u, m, d, lt, uid, i):
                         tcid, video=f, caption=ft if m.caption else None,
                         thumb=th, width=w, height=h, duration=dur,
                         progress=prog, progress_args=(c, d, p.id, st),
-                        reply_to_message_id=rtmid
+                        reply_to_message_id=rtmid, reply_markup=get_caption_buttons()
                     )
                 elif m.video_note:
                     await c.send_video_note(
                         tcid, video_note=f, progress=prog,
                         progress_args=(c, d, p.id, st),
-                        reply_to_message_id=rtmid
+                        reply_to_message_id=rtmid, reply_markup=get_caption_buttons()
                     )
                 elif m.voice:
                     await c.send_voice(
                         tcid, f, progress=prog,
                         progress_args=(c, d, p.id, st),
-                        reply_to_message_id=rtmid
+                        reply_to_message_id=rtmid, reply_markup=get_caption_buttons()
                     )
                 elif m.sticker:
                     await c.send_sticker(tcid, m.sticker.file_id)
@@ -330,21 +316,21 @@ async def process_msg(c, u, m, d, lt, uid, i):
                         tcid, audio=f, caption=ft if m.caption else None,
                         thumb=th, progress=prog,
                         progress_args=(c, d, p.id, st),
-                        reply_to_message_id=rtmid
+                        reply_to_message_id=rtmid, reply_markup=get_caption_buttons()
                     )
                 elif m.photo:
                     await c.send_photo(
                         tcid, photo=f, caption=ft if m.caption else None,
                         progress=prog,
                         progress_args=(c, d, p.id, st),
-                        reply_to_message_id=rtmid
+                        reply_to_message_id=rtmid, reply_markup=get_caption_buttons()
                     )
                 else:
                     await c.send_document(
                         tcid, document=f, caption=ft if m.caption else None,
                         progress=prog,
                         progress_args=(c, d, p.id, st),
-                        reply_to_message_id=rtmid
+                        reply_to_message_id=rtmid, reply_markup=get_caption_buttons()
                     )
             except Exception as e:
                 await c.edit_message_text(d, p.id, f'Upload failed: {str(e)[:30]}')
@@ -358,10 +344,11 @@ async def process_msg(c, u, m, d, lt, uid, i):
             return 'Done.'
 
         elif m.text:
-            await c.send_message(tcid, text=m.text.markdown, reply_to_message_id=rtmid)
+            await c.send_message(tcid, text=m.text.markdown, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
             return 'Sent.'
+        return 'Skipped: unsupported/empty message.'
     except Exception as e:
-        return f'Error: {str(e)[:50]}'
+        return f'Error: {type(e).__name__}: {str(e)[:200]}'
 
 @X.on_message(filters.command(['batch', 'single']))
 async def process_cmd(c, m):
@@ -511,17 +498,17 @@ async def text_handler(c, m):
                     msg = await get_msg(uc, uc, i, mid, lt)
                     if msg:
                         res = await process_msg(X, uc, msg, str(m.chat.id), lt, uid, i)
-                        if 'Done' in res or 'Copied' in res or 'Sent' in res:
+                        if res and ('Done' in res or 'Copied' in res or 'Sent' in res):
                             success += 1
                     else:
                         pass
                 except Exception as e:
                     try:
-                        await pt.edit(f'{j+1}/{n}: Error - {str(e)[:30]}')
+                        await pt.edit(f'{j+1}/{n}: Error - {type(e).__name__}: {str(e)[:200]}')
                     except:
                         pass
 
-                await asyncio.sleep(10)
+                await asyncio.sleep(1)
 
             if j + 1 == n:
                 await m.reply_text(f'Batch Completed ✅ Success: {success}/{n}')
