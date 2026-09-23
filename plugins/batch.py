@@ -4,7 +4,7 @@
 
 import os, re, time, asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import UserNotParticipant
 from config import API_ID, API_HASH, LOG_GROUP, STRING, FORCE_SUB, FREEMIUM_LIMIT, PREMIUM_LIMIT
 from utils.func import get_user_data, screenshot, thumbnail, get_video_metadata
@@ -14,11 +14,20 @@ from plugins.settings import rename_file
 from plugins.start import subscribe as sub
 from utils.custom_filters import login_in_progress
 from utils.encrypt import dcs
-from plugins.caption_button import get_caption_buttons
 import json
 from typing import Dict, Any, Optional
 
 Y = None if not STRING else __import__('shared_client').userbot
+
+CAPTION_BUTTON_TEXT = os.getenv("CAPTION_BUTTON_TEXT", "🔗 Join Channel")
+CAPTION_BUTTON_URL = os.getenv("CAPTION_BUTTON_URL", "")
+
+def get_caption_buttons():
+    if not CAPTION_BUTTON_URL:
+        return None
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(CAPTION_BUTTON_TEXT, url=CAPTION_BUTTON_URL)]]
+    )
 Z, P, UC, emp = {}, {}, {}, {}
 
 ACTIVE_USERS = {}
@@ -168,9 +177,9 @@ async def send_direct(c, m, tcid, ft=None, rtmid=None):
         elif m.video_note:
             await c.send_video_note(tcid, m.video_note.file_id, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.voice:
-            await c.send_voice(tcid, m.voice.file_id, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
+            await c.send_voice(tcid, m.voice.file_id, reply_to_message_id=rtmid)
         elif m.sticker:
-            await c.send_sticker(tcid, m.sticker.file_id, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
+            await c.send_sticker(tcid, m.sticker.file_id, reply_to_message_id=rtmid)
         elif m.audio:
             await c.send_audio(tcid, m.audio.file_id, caption=ft, duration=m.audio.duration, performer=m.audio.performer, title=m.audio.title, reply_to_message_id=rtmid, reply_markup=get_caption_buttons())
         elif m.photo:
